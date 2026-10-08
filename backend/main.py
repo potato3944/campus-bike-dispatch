@@ -50,16 +50,25 @@ async def ws_gps(ws: WebSocket):
     await ws.accept()
     try:
         while True:
-            points = list(service.recent_points)
-            if points:
+            # 在锁内取一致快照，避免读到「点位/时间/统计」互相错位的中间状态
+            snap = service.snapshot()
+            if snap["points"]:
                 await ws.send_json({
-                    "sim_time": service.sim_time.isoformat(),
-                    "points": points,
-                    "cleaner_stats": service.cleaner.stats,
+                    "sim_time": snap["sim_time"],
+                    "points": snap["points"],
+                    "cleaner_stats": snap["cleaner_stats"],
+                    # 附带最近一次聚类结果（含 clusters/heat/shortage），
+                    # 供「实时监测」模式渲染聚类圈与热力图
+                    "clusters": snap["clusters"],
                 })
             await asyncio.sleep(2.0)
     except WebSocketDisconnect:
         pass
+    except Exception:      # noqa: BLE001 - 单个连接异常不应影响其它连接
+        try:
+            await ws.close()
+        except Exception:  # noqa: BLE001
+            pass
 
 
 # ---------------------------------------------------------------------------

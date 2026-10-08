@@ -1,40 +1,38 @@
 <template>
-  <div class="task-panel panel">
-    <div class="panel-header">
+  <div class="task-panel-card">
+    <div class="card-header">
       <div class="header-left">
-        <span class="panel-title">🚚 智能调度车队与路径</span>
-        <span class="status-pill" :class="activeTruckCount > 0 ? 'running' : 'idle'">
-          {{ activeTruckCount > 0 ? `${activeTruckCount} 辆专车作业中` : '待命' }}
+        <span class="card-title">调度车队与路径规划</span>
+        <span class="status-tag" :class="activeTruckCount > 0 ? 'active' : 'idle'">
+          {{ activeTruckCount > 0 ? `${activeTruckCount} 车作业中` : '待命中' }}
         </span>
       </div>
-      <button class="btn btn-primary btn-sm" :disabled="loading" @click="$emit('refresh')">
-        {{ loading ? 'OR-Tools 求解中…' : 'CVRP 路径规划' }}
+      <button class="minimal-btn" :disabled="loading" @click="$emit('refresh')">
+        {{ loading ? '求解中…' : 'CVRP 规划' }}
       </button>
     </div>
 
-    <div class="panel-body">
-      <!-- 动态演化模式下的专车卡片 -->
-      <div v-if="trucks && trucks.length" class="fleet-section">
-        <div class="section-title">实时出勤专车状态 (动态削峰)</div>
-        <div v-for="t in trucks" :key="t.id" class="truck-card" :class="t.status">
-          <div class="truck-top">
-            <div class="t-name">
-              <span class="t-badge">{{ t.id }}号车</span>
-              <strong>{{ t.name }}</strong>
-            </div>
-            <span class="t-state" :class="t.status">{{ t.status_text }}</span>
+    <div class="card-body">
+      <!-- 动态演化专车状态 -->
+      <div v-if="trucks && trucks.length" class="fleet-group">
+        <div class="group-title">实时出勤车辆 (削峰填谷)</div>
+        <div v-for="t in trucks" :key="t.id" class="truck-item">
+          <div class="truck-head">
+            <span class="truck-id-badge">{{ t.id }}号车</span>
+            <span class="truck-name">{{ t.name }}</span>
+            <span class="truck-state-chip" :class="t.status">{{ t.status_text }}</span>
           </div>
 
-          <div class="t-action">{{ t.action }}</div>
+          <div class="truck-desc">{{ t.action }}</div>
 
-          <div class="load-bar-wrap">
-            <div class="load-txt">
-              <span>运载装载量</span>
-              <strong :class="{ full: t.load >= t.capacity }">{{ t.load }} / {{ t.capacity }} 辆</strong>
+          <div class="truck-bar-wrap">
+            <div class="bar-meta">
+              <span>装载负荷</span>
+              <strong>{{ t.load }} / {{ t.capacity }} 辆</strong>
             </div>
-            <div class="bar-track">
+            <div class="bar-bg">
               <div
-                class="bar-fill"
+                class="bar-active"
                 :style="{ width: Math.min(100, Math.round((t.load / t.capacity) * 100)) + '%' }"
               ></div>
             </div>
@@ -42,34 +40,40 @@
         </div>
       </div>
 
-      <!-- 静态 CVRP 方案列表 -->
-      <div v-if="dispatch && dispatch.tasks && dispatch.tasks.length" class="cvrp-section">
-        <div class="section-title">
-          <span>CVRP 最优调度规划方案</span>
-          <span class="cvrp-dist">总里程: {{ (dispatch.total_distance / 1000).toFixed(2) }} km</span>
+      <!-- CVRP 求解方案 -->
+      <div v-if="dispatch && dispatch.tasks && dispatch.tasks.length" class="cvrp-group">
+        <div class="group-title">
+          <span>CVRP 最优路径方案</span>
+          <span class="dist-num">{{ (dispatch.total_distance / 1000).toFixed(2) }} km</span>
         </div>
-        <div class="task-list">
-          <div v-for="task in dispatch.tasks" :key="task.vehicle_id" class="cvrp-card">
-            <div class="cvrp-head">
-              <span class="v-tag">车辆 {{ task.vehicle_id }}</span>
-              <span class="v-meta">{{ task.distance_km }} km · 规划装运 {{ task.load }}辆</span>
+
+        <!-- 求解器对比（改进遗传算法 vs OR-Tools 对照），无该字段则不渲染 -->
+        <div v-if="solverCompareText" class="solver-compare">
+          {{ solverCompareText }}
+        </div>
+
+        <div class="cvrp-list">
+          <div v-for="task in dispatch.tasks" :key="task.vehicle_id" class="cvrp-item">
+            <div class="cvrp-info">
+              <span class="v-num">车 {{ task.vehicle_id }}</span>
+              <span class="v-route-desc">{{ task.distance_km }} km · 规划装运 {{ task.load }}辆</span>
             </div>
-            <div class="cvrp-stops">
+            <div class="cvrp-tags">
               <span
                 v-for="(s, i) in task.stops"
                 :key="i"
-                class="stop-badge"
+                class="stop-pill"
                 :class="s.op === 'pickup' ? 'pickup' : 'delivery'"
               >
-                {{ s.op === 'pickup' ? '⬆️ 削峰拉走' : '⬇️ 补缺投放' }} {{ s.qty }}辆
+                {{ s.op === 'pickup' ? '削峰提车' : '补缺投放' }} {{ s.qty }}辆
               </span>
             </div>
           </div>
         </div>
       </div>
 
-      <div v-if="(!trucks || !trucks.length) && (!dispatch || !dispatch.tasks || !dispatch.tasks.length)" class="empty">
-        暂无活跃调度任务，系统正在根据区域失衡阈值持续监控…
+      <div v-if="(!trucks || !trucks.length) && (!dispatch || !dispatch.tasks || !dispatch.tasks.length)" class="empty-state">
+        系统正在依据各热点容量阈值持续监控失衡态势…
       </div>
     </div>
   </div>
@@ -90,214 +94,237 @@ const activeTruckCount = computed(() => {
   if (!props.trucks) return 0
   return props.trucks.filter((t) => t.status && t.status !== 'standby' && t.status !== 'completed').length
 })
+
+// 求解器对比文案：例如「GA 1.22 km / 38 ms · OR-Tools 1.18 km / 210 ms」
+const solverCompareText = computed(() => {
+  const cmp = props.dispatch?.solver_comparison
+  if (!cmp) return ''
+  const label = { ga: 'GA', ortools: 'OR-Tools' }
+  const parts = []
+  for (const key of ['ga', 'ortools']) {
+    const item = cmp[key]
+    if (!item || item.total_distance == null) continue
+    const km = (item.total_distance / 1000).toFixed(2)
+    const ms = item.elapsed_ms != null ? ` / ${Math.round(item.elapsed_ms)} ms` : ''
+    parts.push(`${label[key]} ${km} km${ms}`)
+  }
+  return parts.length ? `求解对比 · ${parts.join(' · ')}` : ''
+})
 </script>
 
 <style scoped>
-.task-panel {
-  background: rgba(14, 20, 36, 0.82);
-  border: 1px solid rgba(0, 240, 255, 0.18);
+.task-panel-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
   border-radius: 8px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
-.panel-header {
-  height: 44px;
+.card-header {
+  height: 42px;
   padding: 0 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(15, 23, 42, 0.5);
+  border-bottom: 1px solid #f1f5f9;
+  background: #ffffff;
 }
 .header-left {
   display: flex;
   align-items: center;
   gap: 8px;
 }
-.panel-title {
-  font-size: 13px;
+.card-title {
+  font-size: 12px;
   font-weight: 600;
-  color: #e2e8f0;
+  color: #0f172a;
 }
-.status-pill {
+.status-tag {
   font-size: 10px;
-  padding: 2px 7px;
-  border-radius: 10px;
-  background: rgba(100, 116, 139, 0.2);
-  color: #94a3b8;
-  border: 1px solid rgba(148, 163, 184, 0.25);
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: 4px;
 }
-.status-pill.running {
-  background: rgba(16, 185, 129, 0.2);
-  color: #10b981;
-  border-color: rgba(16, 185, 129, 0.4);
-  box-shadow: 0 0 8px rgba(16, 185, 129, 0.25);
+.status-tag.idle {
+  background: #f1f5f9;
+  color: #64748b;
+}
+.status-tag.active {
+  background: #ecfdf5;
+  color: #059669;
 }
 
-.panel-body {
+.card-body {
   flex: 1;
   overflow-y: auto;
   padding: 10px 12px;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  max-height: 280px;
+  max-height: 260px;
 }
 
-.section-title {
+.group-title {
   display: flex;
   justify-content: space-between;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
-  color: #94a3b8;
-  margin-bottom: 6px;
   text-transform: uppercase;
+  color: #64748b;
   letter-spacing: 0.5px;
-}
-.cvrp-dist {
-  color: #00f0ff;
-}
-
-/* 专车卡片 */
-.truck-card {
-  background: rgba(15, 23, 42, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 6px;
-  padding: 8px 10px;
   margin-bottom: 6px;
-  transition: all 0.2s ease;
 }
-.truck-card.loading, .truck-card.hauling, .truck-card.unloading {
-  border-color: rgba(16, 185, 129, 0.4);
-  box-shadow: 0 0 12px rgba(16, 185, 129, 0.15);
+.dist-num {
+  font-family: monospace;
+  color: #0f172a;
 }
-.truck-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.t-name {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: #f1f5f9;
-  font-size: 12px;
-}
-.t-badge {
+
+/* 求解器对比小字 */
+.solver-compare {
   font-size: 9px;
-  background: rgba(0, 240, 255, 0.2);
-  color: #00f0ff;
-  padding: 1px 4px;
-  border-radius: 3px;
-  font-weight: 700;
-}
-.t-state {
-  font-size: 10px;
-  padding: 1px 6px;
+  font-family: monospace;
+  color: #64748b;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
   border-radius: 4px;
-  font-weight: 600;
-}
-.t-state.standby { background: rgba(100, 116, 139, 0.2); color: #94a3b8; }
-.t-state.loading { background: rgba(245, 158, 11, 0.2); color: #f59e0b; }
-.t-state.hauling { background: rgba(56, 189, 248, 0.2); color: #38bdf8; }
-.t-state.unloading { background: rgba(16, 185, 129, 0.2); color: #10b981; }
-.t-state.completed { background: rgba(168, 85, 247, 0.2); color: #a855f7; }
-
-.t-action {
-  font-size: 11px;
-  color: #cbd5e1;
-  margin: 5px 0;
-  line-height: 1.3;
+  padding: 3px 6px;
+  margin-bottom: 6px;
+  letter-spacing: 0.2px;
 }
 
-.load-bar-wrap {
-  margin-top: 4px;
-}
-.load-txt {
-  display: flex;
-  justify-content: space-between;
-  font-size: 10px;
-  color: #94a3b8;
-  margin-bottom: 2px;
-}
-.load-txt strong { color: #00f0ff; }
-.load-txt strong.full { color: #f59e0b; }
-.bar-track {
-  width: 100%;
-  height: 5px;
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.08);
-  overflow: hidden;
-}
-.bar-fill {
-  height: 100%;
-  border-radius: 3px;
-  background: linear-gradient(to right, #00f0ff, #10b981);
-  transition: width 0.3s ease;
-}
-
-/* CVRP 卡片 */
-.cvrp-card {
-  background: rgba(15, 23, 42, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+/* 专车条目 */
+.truck-item {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
   border-radius: 6px;
   padding: 7px 10px;
   margin-bottom: 6px;
 }
-.cvrp-head {
+.truck-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.truck-id-badge {
+  font-size: 9px;
+  background: #0f172a;
+  color: #ffffff;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-weight: 600;
+}
+.truck-name {
+  font-size: 11px;
+  font-weight: 600;
+  color: #1e293b;
+}
+.truck-state-chip {
+  margin-left: auto;
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-weight: 500;
+}
+.truck-state-chip.standby { background: #f1f5f9; color: #64748b; }
+.truck-state-chip.loading { background: #fff7ed; color: #ea580c; }
+.truck-state-chip.hauling { background: #eff6ff; color: #2563eb; }
+.truck-state-chip.unloading { background: #ecfdf5; color: #059669; }
+.truck-state-chip.completed { background: #faf5ff; color: #7c3aed; }
+
+.truck-desc {
+  font-size: 10px;
+  color: #64748b;
+  margin: 4px 0;
+  line-height: 1.3;
+}
+
+.truck-bar-wrap {
+  margin-top: 3px;
+}
+.bar-meta {
   display: flex;
   justify-content: space-between;
-  font-size: 11px;
+  font-size: 9px;
+  color: #64748b;
+  margin-bottom: 2px;
+}
+.bar-meta strong {
+  color: #0f172a;
+}
+.bar-bg {
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: #e2e8f0;
+  overflow: hidden;
+}
+.bar-active {
+  height: 100%;
+  border-radius: 2px;
+  background: #0f172a;
+  transition: width 0.25s ease;
+}
+
+/* CVRP 列表条目 */
+.cvrp-item {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 6px 9px;
   margin-bottom: 5px;
 }
-.v-tag { color: #00f0ff; font-weight: 600; }
-.v-meta { color: #94a3b8; }
-.cvrp-stops {
+.cvrp-info {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  margin-bottom: 4px;
+}
+.v-num { font-weight: 600; color: #0f172a; }
+.v-route-desc { color: #64748b; }
+.cvrp-tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
+  gap: 4px;
 }
-.stop-badge {
-  font-size: 10px;
-  padding: 2px 6px;
+.stop-pill {
+  font-size: 9px;
+  padding: 1px 5px;
   border-radius: 3px;
-  border: 1px solid transparent;
 }
-.stop-badge.pickup {
-  background: rgba(255, 51, 102, 0.15);
-  color: #ff3366;
-  border-color: rgba(255, 51, 102, 0.3);
+.stop-pill.pickup {
+  background: #ffe4e6;
+  color: #be123c;
 }
-.stop-badge.delivery {
-  background: rgba(16, 185, 129, 0.15);
-  color: #10b981;
-  border-color: rgba(16, 185, 129, 0.3);
+.stop-pill.delivery {
+  background: #dcfce7;
+  color: #15803d;
 }
 
-.empty {
+.empty-state {
   padding: 24px;
   text-align: center;
-  color: #64748b;
-  font-size: 12px;
+  color: #94a3b8;
+  font-size: 11px;
 }
 
-.btn-sm {
-  padding: 4px 10px;
+.minimal-btn {
+  padding: 4px 8px;
   font-size: 11px;
+  font-weight: 500;
   border-radius: 4px;
-  background: #0284c7;
-  color: #fff;
-  border: 1px solid #38bdf8;
+  background: #0f172a;
+  color: #ffffff;
+  border: none;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.15s;
 }
-.btn-sm:hover:not(:disabled) {
-  background: #0369a1;
-  box-shadow: 0 0 10px rgba(56, 189, 248, 0.4);
+.minimal-btn:hover:not(:disabled) {
+  background: #334155;
 }
-.btn-sm:disabled {
-  opacity: 0.6;
+.minimal-btn:disabled {
+  opacity: 0.5;
   cursor: not-allowed;
 }
 </style>

@@ -4,3 +4,8 @@ numpy>=1.26
 simpy>=4.0
 scikit-learn>=1.4
 ortools>=9.10
+
+# 测试依赖（README「测试」一节使用）
+pytest>=8.0
+# 可选：如需使用 FastAPI TestClient 编写接口测试，额外安装
+# httpx>=0.27

@@ -1,145 +1,127 @@
 <template>
   <div class="app-root">
-    <!-- 顶部高科技导航栏 -->
+    <!-- 极简大师风导航栏 (Dieter Rams / Apple Studio 风格) -->
     <header class="topbar">
       <div class="brand">
-        <div class="logo-box">
-          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#00f0ff" stroke-width="2.2">
+        <div class="brand-symbol">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#0f172a" stroke-width="2.2">
             <circle cx="5.5" cy="17.5" r="3.5" />
             <circle cx="18.5" cy="17.5" r="3.5" />
             <path d="M5.5 17.5L9 9h6l3 8.5M9 9l-1-4H6m3 4h6m0 0l2-4h2" />
           </svg>
         </div>
         <div class="brand-text">
-          <h1 class="title">智慧校园共享单车智能调度管理平台</h1>
-          <span class="sub-title">CAMPUS SMART BIKE DISPATCH & DIGITAL TWIN SYSTEM</span>
+          <h1 class="title">校园共享单车智能调度系统</h1>
+          <span class="sub-title">CAMPUS MOBILITY ENGINE · DIGITAL TWIN DISPATCH</span>
         </div>
       </div>
 
-      <!-- 核心场景快捷切换胶囊 -->
-      <div class="scenario-selector">
+      <!-- 核心场景分段选择器 (Apple Segmented Control) -->
+      <div class="scenario-segmented">
         <button
           v-for="sc in scenarioList"
           :key="sc.id"
-          class="sc-pill"
+          class="seg-item"
           :class="{ active: currentScenarioId === sc.id && !isLiveMode }"
           @click="selectScenario(sc.id)"
         >
-          <span class="sc-dot" :style="{ backgroundColor: sc.accent_color }"></span>
-          <span class="sc-name">{{ sc.title.split('·')[0] }}</span>
+          {{ sc.title.split('·')[0] }}
         </button>
         <button
-          class="sc-pill live-pill"
+          class="seg-item"
           :class="{ active: isLiveMode }"
           @click="switchToLiveMode"
         >
-          <span class="sc-dot live"></span>
-          <span class="sc-name">📡 实时数据流</span>
+          实时监测
         </button>
       </div>
 
-      <!-- 右侧态势时钟与状态 -->
+      <!-- 右侧极简状态 -->
       <div class="top-status">
-        <div class="clock-badge">
-          <span class="clock-label">演化时间</span>
-          <span class="clock-val">{{ displayTime }}</span>
+        <div class="clock-display">
+          <span class="clock-label">推演时间</span>
+          <span class="clock-time">{{ displayTime }}</span>
         </div>
-        <div class="phase-badge" :class="phaseClass">
+        <div class="stage-tag" :class="stageClass">
           {{ currentPhaseName }}
         </div>
-        <div class="conn-badge" :class="{ online: isOnline }">
-          <span class="pulse-dot"></span>{{ isOnline ? '数字孪生已就绪' : '连接中' }}
+        <div class="conn-dot-wrap">
+          <span class="status-indicator"></span>
+          <span class="conn-txt">系统就绪</span>
         </div>
       </div>
     </header>
 
-    <!-- 顶部核心 KPI 指标卡片条 -->
+    <!-- 顶部数据看板条 (Typography-First 极简指标) -->
     <section class="kpi-strip">
-      <div class="kpi-card cyan">
-        <div class="kpi-icon">🚲</div>
-        <div class="kpi-info">
-          <div class="kpi-label">全校单车总量</div>
-          <div class="kpi-val">{{ totalBikesCount }}<span class="unit">辆</span></div>
+      <div class="kpi-cell">
+        <div class="cell-label">01 / 在线车辆</div>
+        <div class="cell-val">{{ totalBikesCount }}<span class="unit">辆</span></div>
+      </div>
+
+      <div class="kpi-cell">
+        <div class="cell-label">02 / 骑行流动</div>
+        <div class="cell-val">{{ currentFrame?.active_moving ?? 0 }}<span class="unit">辆</span></div>
+      </div>
+
+      <div class="kpi-cell" :class="{ alert: (currentFrame?.teaching_total ?? 0) > 180 }">
+        <div class="cell-label">03 / 教学区存车</div>
+        <div class="cell-val">
+          {{ currentFrame?.teaching_total ?? 0 }}<span class="unit">辆</span>
+          <span v-if="(currentFrame?.teaching_total ?? 0) > 180" class="mini-tag red">峰值堆积</span>
         </div>
       </div>
 
-      <div class="kpi-card orange">
-        <div class="kpi-icon">⚡</div>
-        <div class="kpi-info">
-          <div class="kpi-label">活跃骑行流动</div>
-          <div class="kpi-val">{{ currentFrame?.active_moving ?? 0 }}<span class="unit">辆</span></div>
+      <div class="kpi-cell" :class="{ alert: (currentFrame?.dorm_total ?? 0) < 50 }">
+        <div class="cell-label">04 / 宿舍区存车</div>
+        <div class="cell-val">
+          {{ currentFrame?.dorm_total ?? 0 }}<span class="unit">辆</span>
+          <span v-if="(currentFrame?.dorm_total ?? 0) < 50" class="mini-tag purple">排空空缺</span>
         </div>
       </div>
 
-      <div class="kpi-card red" :class="{ alert: (currentFrame?.teaching_total ?? 0) > 180 }">
-        <div class="kpi-icon">🏫</div>
-        <div class="kpi-info">
-          <div class="kpi-label">教学区存车量 (聚集峰值)</div>
-          <div class="kpi-val">{{ currentFrame?.teaching_total ?? 0 }}<span class="unit">辆</span></div>
-        </div>
-        <span v-if="(currentFrame?.teaching_total ?? 0) > 180" class="kpi-tag alert">严重堆积</span>
+      <div class="kpi-cell">
+        <div class="cell-label">05 / 聚类告警</div>
+        <div class="cell-val">{{ currentClusters.length }}<span class="unit">处</span></div>
       </div>
 
-      <div class="kpi-card purple" :class="{ alert: (currentFrame?.dorm_total ?? 0) < 50 }">
-        <div class="kpi-icon">🏢</div>
-        <div class="kpi-info">
-          <div class="kpi-label">宿舍区存车量 (潮汐排空)</div>
-          <div class="kpi-val">{{ currentFrame?.dorm_total ?? 0 }}<span class="unit">辆</span></div>
-        </div>
-        <span v-if="(currentFrame?.dorm_total ?? 0) < 50" class="kpi-tag purple">严重空缺</span>
+      <div class="kpi-cell">
+        <div class="cell-label">06 / 调度车辆</div>
+        <div class="cell-val">{{ activeTrucksCount }} / {{ mapConfig?.cvrp?.vehicle_num ?? 5 }}<span class="unit">辆</span></div>
       </div>
 
-      <div class="kpi-card amber">
-        <div class="kpi-icon">⭕</div>
-        <div class="kpi-info">
-          <div class="kpi-label">DBSCAN 堆积簇</div>
-          <div class="kpi-val">{{ currentClusters.length }}<span class="unit">处</span></div>
-        </div>
-      </div>
-
-      <div class="kpi-card green">
-        <div class="kpi-icon">🚚</div>
-        <div class="kpi-info">
-          <div class="kpi-label">调度专车出勤</div>
-          <div class="kpi-val">{{ activeTrucksCount }} / 2<span class="unit">辆</span></div>
-        </div>
-      </div>
-
-      <div class="kpi-card emerald">
-        <div class="kpi-icon">⚖️</div>
-        <div class="kpi-info">
-          <div class="kpi-label">全校供需平衡指数</div>
-          <div class="kpi-val">{{ currentFrame?.balance_rate ?? 85.0 }}<span class="unit">%</span></div>
-        </div>
+      <div class="kpi-cell">
+        <div class="cell-label">07 / 供需平衡率</div>
+        <div class="cell-val">{{ currentFrame?.balance_rate ?? 85.0 }}<span class="unit">%</span></div>
       </div>
     </section>
 
     <!-- 主视窗工作区 -->
     <main class="workbench">
-      <!-- 左侧：全校热点车位饱和度实时条与算法指标 -->
+      <!-- 左侧：热点车位饱和度实时看板与算法诊断 -->
       <aside class="left-panel">
-        <div class="panel hotspot-panel">
-          <div class="panel-header">
-            <span class="panel-title">📍 校园核心区域存车与容量饱和度</span>
-            <span class="badge-live">Live</span>
+        <div class="content-card hotspot-card">
+          <div class="card-header">
+            <span class="card-title">区域车位饱和度</span>
+            <span class="card-sub-count">10 处核心区域</span>
           </div>
-          <div class="panel-body hotspot-list">
+          <div class="hotspot-list">
             <div
               v-for="(cap, name) in capacityMap"
               :key="name"
-              class="hotspot-bar-item"
+              class="zone-bar-row"
               :class="getStockStatusClass(name, currentZoneCounts[name] || 0, cap)"
             >
-              <div class="hb-title">
-                <span class="hb-name">{{ name }}</span>
-                <span class="hb-num">
-                  <strong>{{ currentZoneCounts[name] || 0 }}</strong> / {{ cap }} 辆
-                  <span class="pct">({{ Math.round(((currentZoneCounts[name] || 0) / cap) * 100) }}%)</span>
+              <div class="zb-meta">
+                <span class="zb-name">{{ name }}</span>
+                <span class="zb-data">
+                  <strong>{{ currentZoneCounts[name] || 0 }}</strong> / {{ cap }}
+                  <span class="zb-pct">({{ Math.round(((currentZoneCounts[name] || 0) / cap) * 100) }}%)</span>
                 </span>
               </div>
-              <div class="hb-track">
+              <div class="zb-line-track">
                 <div
-                  class="hb-fill"
+                  class="zb-line-fill"
                   :style="{
                     width: Math.min(100, Math.round(((currentZoneCounts[name] || 0) / cap) * 100)) + '%',
                   }"
@@ -149,38 +131,34 @@
           </div>
         </div>
 
-        <div class="panel diag-panel">
-          <div class="panel-header">
-            <span class="panel-title">🤖 智能聚类与调度算法决策状态</span>
+        <div class="content-card diag-card">
+          <div class="card-header">
+            <span class="card-title">算法引擎状态</span>
           </div>
-          <div class="panel-body diag-content">
-            <div class="diag-item">
-              <span class="diag-k">聚类算法核心</span>
-              <span class="diag-v highlight">DBSCAN + K-Means 双阶段</span>
+          <div class="diag-body">
+            <div class="diag-row">
+              <span class="k">聚类识别</span>
+              <span class="v">DBSCAN + K-Means</span>
             </div>
-            <div class="diag-item">
-              <span class="diag-k">邻域半径 (Eps)</span>
-              <span class="diag-v">80.0 米 (校园尺度)</span>
+            <div class="diag-row">
+              <span class="k">邻域半径 (Eps)</span>
+              <span class="v font-mono">{{ mapConfig?.cluster?.eps_m ?? 80 }} m</span>
             </div>
-            <div class="diag-item">
-              <span class="diag-k">核心点密度 (MinPts)</span>
-              <span class="diag-v">5 辆</span>
+            <div class="diag-row">
+              <span class="k">核心密度 (MinPts)</span>
+              <span class="v font-mono">{{ mapConfig?.cluster?.min_samples ?? 5 }} 辆</span>
             </div>
-            <div class="diag-item">
-              <span class="diag-k">CVRP 求解引擎</span>
-              <span class="diag-v highlight">Google OR-Tools (局部引导搜索)</span>
-            </div>
-            <div class="diag-item">
-              <span class="diag-k">当前调度响应阈值</span>
-              <span class="diag-v">区域超载 150% 即触发削峰</span>
+            <div class="diag-row">
+              <span class="k">路径求解</span>
+              <span class="v">{{ solverLabel }}</span>
             </div>
           </div>
         </div>
       </aside>
 
-      <!-- 中间：高保真数字孪生地图与底部时空控制器 -->
+      <!-- 中间：高保真地图与底部悬浮控制岛 -->
       <section class="center-gis">
-        <div class="map-wrapper">
+        <div class="map-frame">
           <MapView
             :config="mapConfig"
             :hotspots="hotspots"
@@ -198,56 +176,52 @@
             @toggle-layer="onToggleLayer"
           />
 
-          <!-- 底部浮动时空推演与演化控制器 -->
-          <div class="floating-timeline-bar">
-            <!-- 场景提示横幅 -->
-            <div class="timeline-banner">
-              <div class="tb-left">
-                <span class="tb-badge">{{ currentScenarioMeta?.tag || '演化回放' }}</span>
-                <span class="tb-desc"><strong>{{ currentPhaseName }}</strong> · {{ currentPhaseDesc }}</span>
+          <!-- 底部悬浮控制岛 (Apple Dynamic Island / Media Player 极简风格) -->
+          <div class="floating-controller-dock">
+            <div class="dock-top-row">
+              <div class="phase-info">
+                <span class="phase-lead">{{ currentPhaseName }}</span>
+                <span class="phase-detail">{{ currentPhaseDesc }}</span>
               </div>
-              <div class="tb-bookmarks">
-                <button class="bm-btn" @click="seekToStep(0)">起步 07:30</button>
-                <button class="bm-btn" @click="seekToStep(18)">潮汐爆发 07:48</button>
-                <button class="bm-btn alert" @click="seekToStep(32)">🚨 严重聚集 08:02</button>
-                <button class="bm-btn truck" @click="seekToStep(42)">🚚 调度削峰 08:12</button>
-                <button class="bm-btn safe" @click="seekToStep(56)">恢复平衡 08:26</button>
+              <div class="time-bookmarks">
+                <button class="bm-chip" @click="seekToStep(0)">07:30 起步</button>
+                <button class="bm-chip" @click="seekToStep(18)">07:48 潮汐</button>
+                <button class="bm-chip alert" @click="seekToStep(32)">08:02 峰值聚集</button>
+                <button class="bm-chip truck" @click="seekToStep(42)">08:12 调度削峰</button>
+                <button class="bm-chip" @click="seekToStep(56)">08:26 平衡</button>
               </div>
             </div>
 
-            <!-- 控制滑块与播放按键 -->
-            <div class="timeline-controls">
-              <button class="play-btn" :class="{ playing }" @click="togglePlay">
-                <span class="play-icon">{{ playing ? '⏸' : '▶' }}</span>
-                <span>{{ playing ? '暂停' : '播放演化' }}</span>
+            <div class="dock-controls-row">
+              <button class="round-play-btn" :class="{ playing }" @click="togglePlay" :title="playing ? '暂停' : '播放'">
+                <span class="btn-glyph">{{ playing ? '❚❚' : '▶' }}</span>
               </button>
 
-              <div class="slider-wrapper">
+              <div class="track-slider-group">
                 <input
                   type="range"
-                  class="timeline-slider"
+                  class="dock-slider"
                   min="0"
                   :max="maxSteps"
                   v-model.number="currentStep"
                   @input="onSliderInput"
                 />
-                <div class="slider-ticks">
-                  <span>{{ scenarioData?.time_start || '07:30' }} (起点)</span>
-                  <span class="center-tick">当前进度 {{ Math.round((currentStep / maxSteps) * 100) }}%</span>
-                  <span>{{ scenarioData?.time_end || '08:30' }} (终点)</span>
+                <div class="dock-slider-scale">
+                  <span>{{ scenarioData?.time_start || '07:30' }}</span>
+                  <span class="current-step-label">{{ displayTime }}</span>
+                  <span>{{ scenarioData?.time_end || '08:30' }}</span>
                 </div>
               </div>
 
-              <div class="speed-selector">
-                <span class="sp-label">速率:</span>
+              <div class="speed-toggle-group">
                 <button
-                  v-for="sp in [0.5, 1, 2, 5]"
+                  v-for="sp in [1, 2, 5]"
                   :key="sp"
-                  class="sp-btn"
+                  class="speed-pill"
                   :class="{ active: playSpeedMultiplier === sp }"
                   @click="playSpeedMultiplier = sp"
                 >
-                  {{ sp }}x
+                  {{ sp }}×
                 </button>
               </div>
             </div>
@@ -255,7 +229,7 @@
         </div>
       </section>
 
-      <!-- 右侧：实时聚集演化折线趋势图与调度专车任务流水 -->
+      <!-- 右侧：实时折线图与调度任务面板 -->
       <aside class="right-panel">
         <SimChart
           :results="simResults"
@@ -291,12 +265,12 @@ const simLoading = ref(false)
 const simResults = ref([])
 const dispatchPlan = ref(null)
 
-// 场景演化状态
+// 场景列表
 const scenarioList = ref([
-  { id: 'morning_rush', title: '早八上课潮·教学区聚集演化', accent_color: '#ff4d4f', tag: '早高峰重度聚集' },
-  { id: 'noon_canteen', title: '午间干饭潮·食堂门口暴增', accent_color: '#fa8c16', tag: '午高峰餐饮潮汐' },
-  { id: 'evening_dorm', title: '晚间自习归寝·宿舍潮汐回流', accent_color: '#722ed1', tag: '晚高峰反向潮汐' },
-  { id: 'dispatch_compare', title: '调度对比·削峰填谷效果评估', accent_color: '#13c2c2', tag: 'CVRP算法成效' },
+  { id: 'morning_rush', title: '早八上课潮·教学区聚集演化', tag: '早高峰聚集' },
+  { id: 'noon_canteen', title: '午间就餐潮·食堂门口暴增', tag: '午高峰就餐' },
+  { id: 'evening_dorm', title: '晚间归寝流·宿舍潮汐回流', tag: '晚高峰回流' },
+  { id: 'dispatch_compare', title: '调度成效比·削峰填谷对照', tag: '算法成效' },
 ])
 const currentScenarioId = ref('morning_rush')
 const isLiveMode = ref(false)
@@ -307,7 +281,7 @@ const playing = ref(true)
 const playSpeedMultiplier = ref(1.0)
 let playTimer = null
 
-// 图层开关控制
+// 图层开关
 const layerShowHeat = ref(true)
 const layerShowClusters = ref(true)
 const layerShowBikes = ref(true)
@@ -322,7 +296,7 @@ function onToggleLayer(layer) {
   else if (layer === 'hotspots') layerShowHotspots.value = !layerShowHotspots.value
 }
 
-// 区域容量常量表
+// 容量映射表
 const capacityMap = {
   教学楼主楼区: 60,
   教学楼西区: 50,
@@ -345,16 +319,16 @@ const displayTime = computed(() => {
 })
 
 const currentPhaseName = computed(() => {
-  if (isLiveMode.value) return '实时在线监控中'
+  if (isLiveMode.value) return '实时在线监测'
   return currentFrame.value?.phase || '起步分散期'
 })
 
 const currentPhaseDesc = computed(() => {
-  if (isLiveMode.value) return '正在接收校园边缘计算节点上传的实时单车位置数据流'
+  if (isLiveMode.value) return '正在接收校园单车实时状态'
   return currentFrame.value?.phase_desc || '单车均匀停放于各热点'
 })
 
-const phaseClass = computed(() => {
+const stageClass = computed(() => {
   const p = currentPhaseName.value
   if (p.includes('严重堆积') || p.includes('峰值')) return 'alert'
   if (p.includes('调度') || p.includes('削峰')) return 'dispatch'
@@ -398,6 +372,12 @@ const activeTrucksCount = computed(() => {
   ).length
 })
 
+// 当前主求解算法标签（来自后端配置，默认改进遗传算法）
+const solverLabel = computed(() => {
+  const algo = mapConfig.value?.cvrp?.algorithm || 'ga'
+  return algo === 'ortools' ? 'OR-Tools CVRP' : '改进遗传算法 CVRP'
+})
+
 const currentZoneCounts = computed(() => {
   if (isLiveMode.value) {
     const counts = {}
@@ -410,15 +390,11 @@ const currentZoneCounts = computed(() => {
   return currentFrame.value?.zone_counts || {}
 })
 
-const currentScenarioMeta = computed(() => {
-  return scenarioList.value.find((s) => s.id === currentScenarioId.value)
-})
-
 function getStockStatusClass(name, count, cap) {
   const ratio = count / cap
-  if (ratio >= 2.5) return 'danger'
-  if (ratio >= 1.5) return 'warning'
-  if (ratio < 0.2 && (name.includes('宿舍') || name.includes('校门'))) return 'shortage'
+  if (ratio >= 2.5) return 'surge'
+  if (ratio >= 1.4) return 'warning'
+  if (ratio < 0.25 && (name.includes('宿舍') || name.includes('校门'))) return 'shortage'
   return 'normal'
 }
 
@@ -428,7 +404,7 @@ function startPlay() {
   const interval = Math.max(80, Math.round(400 / playSpeedMultiplier.value))
   playTimer = setInterval(() => {
     if (currentStep.value >= maxSteps.value) {
-      currentStep.value = 0 // 循环播放
+      currentStep.value = 0
     } else {
       currentStep.value++
     }
@@ -454,7 +430,6 @@ function seekToStep(step) {
 }
 
 function onSliderInput() {
-  // 拖动滑块时暂停以便细看
   stopPlay()
 }
 
@@ -518,27 +493,25 @@ async function runSimComparison() {
 
 onMounted(async () => {
   try {
-    // 1. 获取配置与热点
     mapConfig.value = await api.config()
     hotspots.value = await api.hotspots()
 
-    // 2. 获取场景元信息列表
     const scRes = await api.scenarios()
-    scenarioList.value = scRes.scenarios || []
+    if (scRes && scRes.scenarios) {
+      scenarioList.value = scRes.scenarios
+    }
 
-    // 3. 默认启动早高峰教学区聚集场景
     await loadScenario('morning_rush')
-
-    // 4. 初次预跑一次 CVRP 和仿真对比
     runCvrpOptimization()
     runSimComparison()
 
-    // 5. 挂接实时 WS 通道
     ws = connectGpsWs((msg) => {
       isOnline.value = true
       liveSimTime.value = msg.sim_time ? msg.sim_time.substring(11, 16) : '--:--'
       if (isLiveMode.value && msg.points) {
         liveBikes.value = msg.points
+        // 后端在 WS 中附带最近一次聚类结果，实时模式据此渲染聚类圈与热力图
+        if (msg.clusters) liveClusters.value = msg.clusters
       }
     })
     isOnline.value = true
@@ -554,7 +527,7 @@ onBeforeUnmount(() => {
 </script>
 
 <style>
-/* 全局重置与深色高科技基调 */
+/* 极简主义设计系统 (Swiss Design / Apple HIG) */
 * {
   box-sizing: border-box;
   margin: 0;
@@ -564,10 +537,10 @@ html, body, #app {
   height: 100%;
   width: 100%;
   overflow: hidden;
-  background: #090e17;
-  color: #e2e8f0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
-  user-select: none;
+  background: #f8fafc;
+  color: #0f172a;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", "PingFang SC", sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
 .app-root {
@@ -575,20 +548,19 @@ html, body, #app {
   flex-direction: column;
   height: 100vh;
   width: 100vw;
-  background: radial-gradient(circle at 50% 10%, #111a2e 0%, #080c14 100%);
+  background: #f8fafc;
 }
 
-/* 顶部科技导航 */
+/* 顶部导航栏 (纯净建筑画廊风格) */
 .topbar {
   flex: none;
-  height: 56px;
-  background: rgba(14, 20, 36, 0.9);
-  backdrop-filter: blur(14px);
-  border-bottom: 1px solid rgba(0, 240, 255, 0.2);
+  height: 52px;
+  background: #ffffff;
+  border-bottom: 1px solid #e2e8f0;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 18px;
+  padding: 0 16px;
   z-index: 100;
 }
 .brand {
@@ -596,354 +568,297 @@ html, body, #app {
   align-items: center;
   gap: 10px;
 }
-.logo-box {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-  background: rgba(0, 240, 255, 0.12);
-  border: 1px solid rgba(0, 240, 255, 0.35);
+.brand-symbol {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
   display: grid;
   place-items: center;
-  box-shadow: 0 0 12px rgba(0, 240, 255, 0.25);
 }
 .brand-text .title {
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: 0.8px;
-  color: #f8fafc;
-  background: linear-gradient(to right, #ffffff, #00f0ff);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+  letter-spacing: -0.2px;
 }
 .brand-text .sub-title {
   display: block;
   font-size: 9px;
   color: #64748b;
-  letter-spacing: 1px;
+  letter-spacing: 0.5px;
+  font-weight: 500;
 }
 
-/* 场景胶囊 */
-.scenario-selector {
+/* 分段场景控制器 (Apple Segmented Control) */
+.scenario-segmented {
   display: flex;
   align-items: center;
-  gap: 8px;
-  background: rgba(15, 23, 42, 0.6);
-  padding: 3px 6px;
-  border-radius: 20px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: #f1f5f9;
+  padding: 3px;
+  border-radius: 7px;
+  border: 1px solid #e2e8f0;
 }
-.sc-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 12px;
-  border-radius: 16px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: #94a3b8;
-  font-size: 12px;
+.seg-item {
+  padding: 4px 12px;
+  font-size: 11px;
   font-weight: 500;
+  color: #64748b;
+  border: none;
+  background: transparent;
+  border-radius: 5px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.15s ease;
 }
-.sc-pill:hover {
-  color: #e2e8f0;
-  background: rgba(255, 255, 255, 0.05);
+.seg-item:hover {
+  color: #0f172a;
 }
-.sc-pill.active {
-  background: rgba(0, 240, 255, 0.15);
-  border-color: rgba(0, 240, 255, 0.4);
-  color: #00f0ff;
+.seg-item.active {
+  background: #ffffff;
+  color: #0f172a;
   font-weight: 600;
-  box-shadow: 0 0 10px rgba(0, 240, 255, 0.25);
-}
-.sc-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-}
-.sc-dot.live {
-  background: #10b981;
-  box-shadow: 0 0 6px #10b981;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
-/* 右侧时钟与状态 */
+/* 右侧推演状态 */
 .top-status {
   display: flex;
   align-items: center;
   gap: 12px;
 }
-.clock-badge {
+.clock-display {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
 }
 .clock-label {
   font-size: 9px;
-  color: #64748b;
+  color: #94a3b8;
   text-transform: uppercase;
 }
-.clock-val {
-  font-size: 16px;
+.clock-time {
+  font-size: 14px;
   font-weight: 700;
   font-family: monospace;
-  color: #00f0ff;
-  text-shadow: 0 0 8px rgba(0, 240, 255, 0.4);
+  color: #0f172a;
 }
-.phase-badge {
+.stage-tag {
   font-size: 11px;
+  font-weight: 500;
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #475569;
+}
+.stage-tag.alert {
+  background: #fff1f2;
+  border-color: #fecdd3;
+  color: #e11d48;
   font-weight: 600;
-  padding: 4px 10px;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
 }
-.phase-badge.alert {
-  background: rgba(255, 51, 102, 0.2);
-  border-color: #ff3366;
-  color: #ff3366;
-  box-shadow: 0 0 12px rgba(255, 51, 102, 0.4);
-  animation: pulseBlink 1.5s infinite;
+.stage-tag.dispatch {
+  background: #fffbeb;
+  border-color: #fde68a;
+  color: #d97706;
 }
-.phase-badge.dispatch {
-  background: rgba(245, 158, 11, 0.2);
-  border-color: #f59e0b;
-  color: #f59e0b;
-}
-.phase-badge.safe {
-  background: rgba(16, 185, 129, 0.2);
-  border-color: #10b981;
-  color: #10b981;
-}
-.phase-badge.normal {
-  background: rgba(56, 189, 248, 0.15);
-  color: #38bdf8;
-}
-@keyframes pulseBlink {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.85; transform: scale(1.03); }
+.stage-tag.safe {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+  color: #16a34a;
 }
 
-.conn-badge {
+.conn-dot-wrap {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   font-size: 11px;
-  color: #94a3b8;
-  padding: 3px 8px;
-  background: rgba(15, 23, 42, 0.5);
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #64748b;
 }
-.conn-badge.online {
-  color: #10b981;
-}
-.pulse-dot {
+.status-indicator {
   width: 6px;
   height: 6px;
   border-radius: 50%;
   background: #10b981;
-  box-shadow: 0 0 6px #10b981;
 }
 
-/* 顶部核心 KPI 栏 */
+/* 顶部关键指标栏 (Dieter Rams 极简网格) */
 .kpi-strip {
   flex: none;
-  height: 64px;
-  background: rgba(10, 15, 26, 0.7);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  height: 52px;
+  background: #ffffff;
+  border-bottom: 1px solid #e2e8f0;
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 0 18px;
+  padding: 0 16px;
   overflow-x: auto;
 }
-.kpi-card {
+.kpi-cell {
   flex: 1;
-  min-width: 140px;
-  height: 48px;
-  background: rgba(15, 23, 42, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 7px;
-  display: flex;
-  align-items: center;
-  padding: 0 12px;
-  gap: 10px;
-  position: relative;
-  overflow: hidden;
-  transition: all 0.2s ease;
-}
-.kpi-card:hover {
-  border-color: rgba(0, 240, 255, 0.3);
-  transform: translateY(-1px);
-}
-.kpi-card.cyan { border-left: 3px solid #00f0ff; }
-.kpi-card.orange { border-left: 3px solid #f59e0b; }
-.kpi-card.red { border-left: 3px solid #ff3366; }
-.kpi-card.purple { border-left: 3px solid #a855f7; }
-.kpi-card.amber { border-left: 3px solid #fbbf24; }
-.kpi-card.green { border-left: 3px solid #10b981; }
-.kpi-card.emerald { border-left: 3px solid #34d399; }
-.kpi-card.alert {
-  box-shadow: 0 0 12px rgba(255, 51, 102, 0.25);
-  border-color: rgba(255, 51, 102, 0.5);
-}
-.kpi-icon {
-  font-size: 20px;
-}
-.kpi-info {
+  min-width: 120px;
+  height: 38px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
   display: flex;
   flex-direction: column;
+  justify-content: center;
+  padding: 0 10px;
+  position: relative;
 }
-.kpi-label {
-  font-size: 10px;
-  color: #94a3b8;
-  white-space: nowrap;
+.cell-label {
+  font-size: 9px;
+  color: #64748b;
+  font-weight: 500;
+  letter-spacing: 0.3px;
 }
-.kpi-val {
-  font-size: 17px;
+.cell-val {
+  font-size: 14px;
   font-weight: 700;
-  color: #f8fafc;
+  color: #0f172a;
   line-height: 1.1;
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
 }
-.kpi-val .unit {
+.cell-val .unit {
   font-size: 10px;
   color: #94a3b8;
   font-weight: normal;
-  margin-left: 3px;
 }
-.kpi-tag {
-  position: absolute;
-  top: 4px;
-  right: 6px;
+.mini-tag {
   font-size: 9px;
-  padding: 1px 4px;
-  border-radius: 3px;
-  font-weight: 700;
+  padding: 0 4px;
+  border-radius: 2px;
+  font-weight: 600;
 }
-.kpi-tag.alert {
-  background: rgba(255, 51, 102, 0.25);
-  color: #ff3366;
-}
-.kpi-tag.purple {
-  background: rgba(168, 85, 247, 0.25);
-  color: #a855f7;
-}
+.mini-tag.red { background: #ffe4e6; color: #e11d48; }
+.mini-tag.purple { background: #ede9fe; color: #7c3aed; }
 
-/* 主工作台布局 (左 260px / 中 自适应 / 右 360px) */
+/* 工作台布局 */
 .workbench {
   flex: 1;
   display: flex;
-  padding: 12px;
-  gap: 12px;
+  padding: 10px;
+  gap: 10px;
   min-height: 0;
   overflow: hidden;
 }
 
 /* 左侧面板 */
 .left-panel {
-  width: 270px;
+  width: 250px;
   flex: none;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   min-height: 0;
 }
-.hotspot-panel {
-  flex: 1;
-  background: rgba(14, 20, 36, 0.82);
-  border: 1px solid rgba(0, 240, 255, 0.18);
+.content-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
   border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
   display: flex;
   flex-direction: column;
+}
+.hotspot-card {
+  flex: 1;
   min-height: 0;
 }
+.card-header {
+  height: 38px;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #f1f5f9;
+}
+.card-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #0f172a;
+}
+.card-sub-count {
+  font-size: 10px;
+  color: #94a3b8;
+}
+
 .hotspot-list {
   flex: 1;
   overflow-y: auto;
-  padding: 10px 12px;
+  padding: 8px 12px;
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: 8px;
 }
-.hotspot-bar-item {
+.zone-bar-row {
   display: flex;
   flex-direction: column;
   gap: 3px;
 }
-.hb-title {
+.zb-meta {
   display: flex;
   justify-content: space-between;
-  align-items: center;
   font-size: 11px;
 }
-.hb-name {
-  color: #cbd5e1;
+.zb-name {
+  color: #334155;
   font-weight: 500;
 }
-.hb-num {
+.zb-data {
   font-size: 10px;
+  color: #64748b;
+}
+.zb-data strong {
+  color: #0f172a;
+}
+.zb-pct {
   color: #94a3b8;
 }
-.hb-num strong {
-  color: #f8fafc;
-  font-size: 11px;
-}
-.hb-num .pct {
-  color: #64748b;
-  margin-left: 2px;
-}
-.hb-track {
+
+.zb-line-track {
   width: 100%;
-  height: 6px;
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.08);
+  height: 4px;
+  border-radius: 2px;
+  background: #e2e8f0;
   overflow: hidden;
 }
-.hb-fill {
+.zb-line-fill {
   height: 100%;
-  border-radius: 3px;
-  background: #38bdf8;
+  border-radius: 2px;
+  background: #64748b;
   transition: width 0.3s ease;
 }
-/* 状态样式 */
-.hotspot-bar-item.danger .hb-fill {
-  background: linear-gradient(to right, #fa8c16, #ff3366);
-  box-shadow: 0 0 8px #ff3366;
-}
-.hotspot-bar-item.danger .hb-name { color: #ff3366; font-weight: 700; }
-.hotspot-bar-item.warning .hb-fill { background: #f59e0b; }
-.hotspot-bar-item.warning .hb-name { color: #f59e0b; }
-.hotspot-bar-item.shortage .hb-fill { background: #a855f7; }
-.hotspot-bar-item.shortage .hb-name { color: #c084fc; font-weight: 600; }
+.zone-bar-row.surge .zb-line-fill { background: #e11d48; }
+.zone-bar-row.surge .zb-name { color: #e11d48; font-weight: 600; }
+.zone-bar-row.warning .zb-line-fill { background: #ea580c; }
+.zone-bar-row.shortage .zb-line-fill { background: #7c3aed; }
 
-.diag-panel {
-  height: 180px;
+.diag-card {
+  height: 150px;
   flex: none;
-  background: rgba(14, 20, 36, 0.82);
-  border: 1px solid rgba(0, 240, 255, 0.18);
-  border-radius: 8px;
-  display: flex;
-  flex-direction: column;
 }
-.diag-content {
-  padding: 10px 12px;
+.diag-body {
+  padding: 8px 12px;
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 6px;
   font-size: 11px;
 }
-.diag-item {
+.diag-row {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  border-bottom: 1px dashed rgba(255, 255, 255, 0.05);
-  padding-bottom: 4px;
+  color: #64748b;
+  border-bottom: 1px solid #f8fafc;
+  padding-bottom: 3px;
 }
-.diag-k { color: #94a3b8; }
-.diag-v { color: #e2e8f0; font-weight: 500; }
-.diag-v.highlight { color: #00f0ff; font-weight: 600; }
+.diag-row .v { color: #0f172a; font-weight: 500; }
+.font-mono { font-family: monospace; }
 
-/* 中部 GIS 工作区 */
+/* 中间 GIS */
 .center-gis {
   flex: 1;
   display: flex;
@@ -951,199 +866,162 @@ html, body, #app {
   min-width: 0;
   position: relative;
 }
-.map-wrapper {
+.map-frame {
   position: relative;
   width: 100%;
   height: 100%;
   border-radius: 8px;
   overflow: hidden;
-  border: 1px solid rgba(0, 240, 255, 0.25);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
-/* 底部浮动时空控制器 */
-.floating-timeline-bar {
+/* 底部悬浮控制岛 (Apple Dynamic Island / Media Player) */
+.floating-controller-dock {
   position: absolute;
   bottom: 14px;
-  left: 14px;
-  right: 14px;
-  z-index: 999;
-  background: rgba(14, 20, 36, 0.9);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  border: 1px solid rgba(0, 240, 255, 0.3);
-  border-radius: 10px;
-  padding: 10px 16px;
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6);
+  left: 20px;
+  right: 20px;
+  z-index: 500;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 8px 16px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
-
-.timeline-banner {
+.dock-top-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  padding-bottom: 6px;
+  border-bottom: 1px solid #f1f5f9;
+  padding-bottom: 5px;
 }
-.tb-left {
+.phase-info {
   display: flex;
   align-items: center;
   gap: 8px;
+  font-size: 11px;
 }
-.tb-badge {
-  font-size: 10px;
-  font-weight: 700;
+.phase-lead {
+  font-weight: 600;
+  color: #0f172a;
+}
+.phase-detail {
+  color: #64748b;
+}
+
+.time-bookmarks {
+  display: flex;
+  gap: 5px;
+}
+.bm-chip {
   padding: 2px 7px;
   border-radius: 4px;
-  background: rgba(0, 240, 255, 0.2);
-  color: #00f0ff;
-  border: 1px solid rgba(0, 240, 255, 0.4);
-}
-.tb-desc {
-  font-size: 11px;
-  color: #e2e8f0;
-}
-.tb-desc strong {
-  color: #00f0ff;
-}
-.tb-bookmarks {
-  display: flex;
-  gap: 6px;
-}
-.bm-btn {
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #475569;
   font-size: 10px;
-  padding: 3px 8px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  color: #cbd5e1;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all 0.15s ease;
 }
-.bm-btn:hover {
-  background: rgba(0, 240, 255, 0.2);
-  color: #00f0ff;
-  border-color: #00f0ff;
+.bm-chip:hover {
+  background: #0f172a;
+  color: #ffffff;
+  border-color: #0f172a;
 }
-.bm-btn.alert { border-color: rgba(255, 51, 102, 0.5); color: #ff85a0; }
-.bm-btn.alert:hover { background: rgba(255, 51, 102, 0.3); color: #fff; }
-.bm-btn.truck { border-color: rgba(16, 185, 129, 0.5); color: #6ee7b7; }
-.bm-btn.truck:hover { background: rgba(16, 185, 129, 0.3); color: #fff; }
-.bm-btn.safe { border-color: rgba(56, 189, 248, 0.5); color: #7dd3fc; }
+.bm-chip.alert { border-color: #fecdd3; color: #be123c; }
+.bm-chip.truck { border-color: #bbf7d0; color: #15803d; }
 
-.timeline-controls {
+.dock-controls-row {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
 }
-.play-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 14px;
-  border-radius: 6px;
-  background: linear-gradient(135deg, #0284c7, #0369a1);
-  border: 1px solid #38bdf8;
-  color: #fff;
-  font-size: 12px;
-  font-weight: 600;
+.round-play-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: none;
+  background: #0f172a;
+  color: #ffffff;
+  display: grid;
+  place-items: center;
   cursor: pointer;
-  transition: all 0.2s;
-  box-shadow: 0 0 12px rgba(56, 189, 248, 0.3);
+  transition: all 0.15s ease;
 }
-.play-btn:hover {
-  background: linear-gradient(135deg, #0369a1, #075985);
-  box-shadow: 0 0 16px rgba(56, 189, 248, 0.5);
+.round-play-btn:hover {
+  background: #334155;
+  transform: scale(1.05);
 }
-.play-btn.playing {
-  background: linear-gradient(135deg, #f59e0b, #d97706);
-  border-color: #f59e0b;
+.round-play-btn.playing {
+  background: #e11d48;
+}
+.btn-glyph {
+  font-size: 10px;
+  line-height: 1;
 }
 
-.slider-wrapper {
+.track-slider-group {
   flex: 1;
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
-.timeline-slider {
+.dock-slider {
   width: 100%;
-  height: 6px;
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.15);
+  height: 4px;
+  border-radius: 2px;
+  background: #cbd5e1;
   outline: none;
   cursor: pointer;
-  accent-color: #00f0ff;
+  accent-color: #0f172a;
 }
-.slider-ticks {
+.dock-slider-scale {
   display: flex;
   justify-content: space-between;
   font-size: 9px;
-  color: #64748b;
+  color: #94a3b8;
 }
-.center-tick {
-  color: #00f0ff;
+.current-step-label {
   font-weight: 600;
+  color: #0f172a;
 }
 
-.speed-selector {
+.speed-toggle-group {
   display: flex;
-  align-items: center;
-  gap: 4px;
+  background: #f1f5f9;
+  padding: 2px;
+  border-radius: 5px;
+  gap: 2px;
 }
-.sp-label {
-  font-size: 10px;
-  color: #64748b;
-}
-.sp-btn {
-  font-size: 10px;
+.speed-pill {
   padding: 2px 6px;
+  font-size: 10px;
+  border: none;
+  background: transparent;
+  color: #64748b;
   border-radius: 3px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #94a3b8;
   cursor: pointer;
 }
-.sp-btn.active {
-  background: rgba(0, 240, 255, 0.2);
-  color: #00f0ff;
-  border-color: #00f0ff;
-  font-weight: 700;
+.speed-pill.active {
+  background: #ffffff;
+  color: #0f172a;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
 /* 右侧面板 */
 .right-panel {
-  width: 360px;
+  width: 340px;
   flex: none;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   min-height: 0;
-}
-
-/* 通用面板头 */
-.panel-header {
-  height: 40px;
-  padding: 0 12px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(15, 23, 42, 0.5);
-}
-.panel-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: #e2e8f0;
-}
-.badge-live {
-  font-size: 9px;
-  padding: 1px 5px;
-  border-radius: 3px;
-  background: rgba(16, 185, 129, 0.2);
-  color: #10b981;
-  font-weight: 700;
 }
 </style>

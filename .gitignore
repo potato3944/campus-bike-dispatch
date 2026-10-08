@@ -1,0 +1,25 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+env/
+
+# ---- 前端 ----
+node_modules/
+.vite/
+*.local
+vite.config.js.timestamp-*.mjs
+# 注意：dist/ 是后端托管模式的构建产物，保持纳入版本管理，便于无 Node 环境直接跑
+
+# ---- 编辑器 / 系统 ----
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# ---- 日志 / 临时文件 ----
+*.log
+*.tmp

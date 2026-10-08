@@ -45,13 +45,26 @@ CLUSTER = {
 }
 
 # ---------------------------------------------------------------------------
-# CVRP 调度模型参数（OR-Tools 求解）
+# CVRP 调度模型参数
 # ---------------------------------------------------------------------------
 CVRP = {
     "vehicle_capacity": 40,  # 单车载重约束：每辆车最多搬运的单车数
     "vehicle_num": 5,        # 可用调度车辆数
     "depot": {"lat": 34.1430, "lng": 108.8415},  # 调度中心位置
-    "solver": {              # OR-Tools 求解参数
+    # 求解算法：ga = 改进遗传算法（贪心初始解 + 顺序交叉 + 2-opt + 精英保留，默认）
+    #           ortools = Google OR-Tools RoutingModel（对照实现）
+    "algorithm": "ga",
+    # 改进遗传算法参数（algorithm=ga 时生效）
+    "ga": {
+        "pop_size": 60,          # 种群规模
+        "generations": 120,      # 迭代代数
+        "crossover_rate": 0.85,  # 顺序交叉概率
+        "mutation_rate": 0.2,    # 变异概率
+        "elite_ratio": 0.15,     # 精英保留比例
+        "two_opt_passes": 1,     # 最优个体 2-opt 精修轮数
+    },
+    # OR-Tools 求解参数（algorithm=ortools 时生效）
+    "solver": {
         "time_limit_seconds": 2,            # 求解时间上限（秒）
         "first_solution_strategy": "PATH_CHEAPEST_ARC",
         "local_search": "GUIDED_LOCAL_SEARCH",

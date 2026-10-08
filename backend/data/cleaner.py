@@ -7,6 +7,7 @@ GPS 数据清洗模块
   3. 边界过滤：超出校园地图标定范围的点丢弃。
 """
 
+import math
 import os
 import sys
 import time
@@ -25,17 +26,36 @@ class DataCleaner:
         self._last = {}          # bike_id -> (ts, lat, lng, event)
         self._last_dedup = {}    # bike_id -> (ts, lat, lng)
         self.stats = {"total": 0, "drift_removed": 0, "dup_removed": 0,
-                      "out_of_bound": 0, "kept": 0}
+                      "out_of_bound": 0, "invalid_coord": 0, "bad_ts": 0,
+                      "kept": 0}
 
     def _parse_ts(self, ts):
+        """
+        解析时间戳。无法识别时返回 None（由调用方拒绝该点），
+        避免用 datetime.now() 兜底造成「时间戳被悄悄替换」的隐性数据污染。
+        """
         if isinstance(ts, (int, float)):
-            return datetime.fromtimestamp(ts)
+            try:
+                return datetime.fromtimestamp(ts)
+            except (ValueError, OSError, OverflowError):
+                return None
         if isinstance(ts, datetime):
             return ts
+        if isinstance(ts, str):
+            try:
+                return datetime.fromisoformat(ts)
+            except (ValueError, TypeError):
+                return None
+        return None
+
+    @staticmethod
+    def _parse_coord(value):
+        """坐标解析为 float；非数值/非有限值返回 None。"""
         try:
-            return datetime.fromisoformat(ts)
-        except (ValueError, TypeError):
-            return datetime.now()
+            v = float(value)
+        except (TypeError, ValueError):
+            return None
+        return v if math.isfinite(v) else None
 
     def _in_bounds(self, lat, lng):
         tl, br = MAP["top_left"], MAP["bottom_right"]
@@ -48,8 +68,19 @@ class DataCleaner:
         """
         self.stats["total"] += 1
         bike_id = point.get("bike_id")
-        lat, lng = point.get("lat"), point.get("lng")
+
+        # 0) 字段有效性：坐标缺失/非数值直接丢弃，避免后续比较抛出 TypeError
+        lat = self._parse_coord(point.get("lat"))
+        lng = self._parse_coord(point.get("lng"))
+        if lat is None or lng is None:
+            self.stats["invalid_coord"] += 1
+            return None
+
+        # 0b) 时间戳有效性：无法解析则丢弃，不用当前时间兜底
         ts = self._parse_ts(point.get("ts"))
+        if ts is None:
+            self.stats["bad_ts"] += 1
+            return None
 
         # 1) 边界过滤
         if not self._in_bounds(lat, lng):
@@ -83,6 +114,7 @@ class DataCleaner:
         self._last_dedup[bike_id] = (ts, lat, lng)
         self.stats["kept"] += 1
         out = dict(point)
+        out["lat"], out["lng"] = lat, lng
         out["clean"] = True
         return out
 

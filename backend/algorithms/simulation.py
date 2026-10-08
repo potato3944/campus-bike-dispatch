@@ -85,7 +85,8 @@ class BikeSimulation:
                  duration_h=16.0, arrival_rate_per_h=400.0,
                  threshold_imbalance=25, predict_window_min=30.0,
                  vehicle_cost_per_km=2.0, fix_cost_per_task=5.0,
-                 wait_penalty_per_min=0.5, check_interval_min=5.0):
+                 wait_penalty_per_min=0.5, check_interval_min=5.0,
+                 vehicle_speed_kmh=20.0, max_user_wait_min=10.0):
         self.env = simpy.Environment()
         self.zones = zones
         self.total_bikes = total_bikes
@@ -99,14 +100,20 @@ class BikeSimulation:
         self.fix_cost = fix_cost_per_task
         self.wait_penalty = wait_penalty_per_min
         self.check_interval = check_interval_min
+        self.vehicle_speed = max(vehicle_speed_kmh, 1e-6)   # 调度车行驶速度
+        self.max_user_wait = max_user_wait_min              # 用户最长等待（分钟）
 
         # 指标统计
         self.demand_count = 0
         self.success_count = 0
         self.fail_count = 0
-        self.total_wait_min = 0.0
+        self.total_wait_min = 0.0          # 仅成功借车的等待合计
+        self.total_wait_all_min = 0.0      # 含失败用户的等待合计（失败按最长等待计）
         self.dispatch_tasks = 0
         self.dispatch_distance_km = 0.0
+        self.moved_bikes = 0               # 实际搬运成功的单车数
+        self.unserved_bikes = 0            # 因目的地容量/来源不足未能搬运的数量
+        self.overflow_returns = 0          # 目的地已满仍还车（超容乱停放）次数
         self.rides = 0
         self.borrow_events = []     # (time, zone_id)
         self.return_events = []     # (time, zone_id)
@@ -139,10 +146,9 @@ class BikeSimulation:
             self.env.process(self.borrow(z))
 
     def borrow(self, zone):
-        """借车过程：有车立即借走，无车等待（最多等 10 分钟）"""
-        start = self.env.now
+        """借车过程：有车立即借走，无车等待（最多等 max_user_wait 分钟）"""
         waited = 0.0
-        while zone.bikes <= 0 and waited < 10:
+        while zone.bikes <= 0 and waited < self.max_user_wait:
             yield self.env.timeout(1.0)
             waited += 1.0
         if zone.bikes > 0:
@@ -150,11 +156,14 @@ class BikeSimulation:
             self.success_count += 1
             self.rides += 1
             self.total_wait_min += waited
+            self.total_wait_all_min += waited
             self.borrow_events.append((self.env.now, zone.id))
             # 骑行后还车到另一区域（目的地按潮汐选）
             self.env.process(self.ride_and_return(zone))
         else:
+            # 失败用户同样等满了最长等待时间，应计入总体等待，否则平均等待会被系统性低估
             self.fail_count += 1
+            self.total_wait_all_min += waited
 
     def ride_and_return(self, from_zone):
         """骑行一段时间后还车到目的地"""
@@ -165,22 +174,21 @@ class BikeSimulation:
         total = sum(weights)
         probs = [w / total for w in weights]
         dest = self.rng.choices(self.zones, weights=probs)[0]
-        # 目的地容量限制：超出容量则不允许还车（用户继续骑到下一区域，简化：就近匀出）
+        # 目的地容量限制：超出容量时仍允许还车（模拟真实中的超容乱停放），
+        # 但单独计数，便于后续分析「超容区域」这一失衡信号。
         if dest.bikes >= dest.capacity:
-            # 简单处理：仍还车但记录为超容（模拟真实中出现的乱停放）
-            dest.bikes += 1
-        else:
-            dest.bikes += 1
+            self.overflow_returns += 1
+        dest.bikes += 1
         self.return_events.append((self.env.now, dest.id))
 
     # ------------------------------------------------------------------ 调度
     def dispatch_process(self):
-        """周期检查区域平衡并触发调度"""
+        """周期检查区域平衡并触发调度（每趟任务按距离耗时异步执行）"""
         while self.env.now < self.duration_h * 60:
             yield self.env.timeout(self._check_interval)
             tasks = self._plan_dispatch()
             for task in tasks:
-                self._execute_dispatch(task)
+                self.env.process(self._execute_dispatch(task))
 
     def _zone_imbalance(self, zone):
         """区域不平衡量：>0 表示堆积（需运走），<0 表示空缺（需投放）"""
@@ -200,10 +208,14 @@ class BikeSimulation:
                     qty = int(abs(imb) * 0.7)   # 搬运失衡量的 70%，避免过调
                     tasks.append({"zone": z, "qty": qty, "direction": "out" if imb > 0 else "in"})
         elif self.strategy == "predictive":
-            # 预测未来 predict_window 内各区域需求变化
+            # 预测未来 predict_window 内各区域需求变化：
+            # 在预测窗口上均匀采样多个时点求平均，而不是用同一个未来值重复凑数。
+            samples = 5
+            horizon_h = self.predict_window / 60.0
             for z in self.zones:
-                future = sum(tide_factor(hour + (self.predict_window / 60.0), z.type)
-                             for _ in range(3)) / 3.0
+                future = sum(
+                    tide_factor(hour + horizon_h * (i + 1) / samples, z.type)
+                    for i in range(samples)) / samples
                 current = tide_factor(hour, z.type)
                 # 未来需求显著高于当前 -> 需补车；显著低于 -> 可调出
                 diff = future - current
@@ -238,13 +250,26 @@ class BikeSimulation:
         return paired
 
     def _execute_dispatch(self, task):
-        """执行一次搬运（立即生效 + 统计成本）"""
+        """
+        执行一次搬运：先按距离消耗行驶时间，再落车。
+        搬运量受三重约束：任务计划量、来源可用量、目的地剩余容量，
+        未能搬运的部分计入 unserved_bikes，避免出现「目的地超容」这种不物理的结果。
+        """
         f, t = task["from"], task["to"]
-        qty = task["qty"]
-        if f.bikes - qty < 0:
-            qty = f.bikes
+        # 行驶时间：里程 / 车速（小时 -> 分钟）
+        travel_min = task["dist_km"] / self.vehicle_speed * 60.0
+        if travel_min > 0:
+            yield self.env.timeout(travel_min)
+
+        qty = min(task["qty"], f.bikes, max(0, t.capacity - t.bikes))
+        qty = max(0, int(qty))
+        if qty <= 0:
+            self.unserved_bikes += max(0, int(task["qty"]))
+            return
         f.bikes -= qty
         t.bikes += qty
+        self.moved_bikes += qty
+        self.unserved_bikes += max(0, int(task["qty"] - qty))
         self.dispatch_tasks += 1
         self.dispatch_distance_km += task["dist_km"]
 
@@ -260,22 +285,33 @@ class BikeSimulation:
         turnover = self.rides / self.total_bikes if self.total_bikes else 0.0
         match_rate = (self.success_count / self.demand_count
                       if self.demand_count else 0.0)
-        avg_wait = (self.total_wait_min / self.success_count
-                    if self.success_count else 0.0)
+        # 平均等待：默认口径覆盖全部需求（含等待后仍失败的用户），
+        # 否则只统计成功用户会系统性低估等待水平。
+        avg_wait = (self.total_wait_all_min / self.demand_count
+                    if self.demand_count else 0.0)
+        avg_wait_success = (self.total_wait_min / self.success_count
+                            if self.success_count else 0.0)
         dispatch_cost = (self.fix_cost * self.dispatch_tasks +
                          self.vehicle_cost * self.dispatch_distance_km)
-        wait_cost = avg_wait * self.wait_penalty * self.success_count
+        wait_cost = self.total_wait_all_min * self.wait_penalty
         total_cost = dispatch_cost + wait_cost
+        # 仿真结束时仍在等待中的请求：demand = success + fail + pending
+        pending = max(0, self.demand_count - self.success_count - self.fail_count)
         return {
             "strategy": self.strategy,
             "demand_count": self.demand_count,
             "success_count": self.success_count,
             "fail_count": self.fail_count,
+            "pending_count": pending,
             "turnover_rate": round(turnover, 3),
             "match_rate": round(match_rate, 3),
             "avg_wait_min": round(avg_wait, 2),
+            "avg_wait_success_min": round(avg_wait_success, 2),
             "dispatch_tasks": self.dispatch_tasks,
             "dispatch_distance_km": round(self.dispatch_distance_km, 2),
+            "moved_bikes": self.moved_bikes,
+            "unserved_bikes": self.unserved_bikes,
+            "overflow_returns": self.overflow_returns,
             "dispatch_cost": round(dispatch_cost, 2),
             "wait_cost": round(wait_cost, 2),
             "total_cost": round(total_cost, 2),
