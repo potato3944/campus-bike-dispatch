@@ -418,3 +418,65 @@ def test_summarize_cvrp_input_detects_imbalance():
     s2 = summarize_cvrp_input(paired)
     assert s2["balanced"] is True
     assert s2["net_total"] == 0
+
+
+def test_prompt_compatibility_helpers():
+    """报告约定的 GPS 流和位置存储接口应可独立使用。"""
+    from datetime import datetime
+    from data.gps_simulator import GpsSimulator
+    from store import Store
+
+    sim = GpsSimulator(total_bikes=3, seed=4)
+    event = next(sim.generate_stream(
+        start_time=datetime(2026, 9, 21, 8, 0), max_steps=1))
+    assert event["timestamp"] == event["ts"]
+
+    store = Store(latest_window_s=60)
+    store.update_position(event["bike_id"], event["lat"], event["lng"],
+                          event["timestamp"])
+    assert len(store.get_all_positions()) == 1
+    assert len(store.get_latest_positions(event["timestamp"])) == 1
+
+
+def test_simulation_force_flag_is_forwarded():
+    """HTTP 路由的 force=true 必须真正绕过服务缓存。"""
+    from api.routes import SimRequest, simulation
+    from service import service
+
+    captured = {}
+    original = service.run_simulation
+
+    def fake_run_simulation(*, strategy=None, overrides=None, force=False):
+        captured["strategy"] = strategy
+        captured["force"] = force
+        captured["overrides"] = overrides
+        return {"results": []}
+
+    service.run_simulation = fake_run_simulation
+    try:
+        simulation(SimRequest(strategy="threshold", force=True,
+                              duration_h=2.0))
+    finally:
+        service.run_simulation = original
+
+    assert captured == {
+        "strategy": "threshold",
+        "force": True,
+        "overrides": {"duration_h": 2.0},
+    }
+
+
+def test_dispatch_tasks_query_does_not_trigger_solver():
+    """无缓存时查询调度任务应立即返回空列表，避免演示误触发求解。"""
+    from api.routes import get_dispatch_tasks_compat
+    from service import service
+
+    old = service.last_dispatch
+    service.last_dispatch = None
+    try:
+        result = get_dispatch_tasks_compat()
+    finally:
+        service.last_dispatch = old
+
+    assert result == {"tasks": [], "route": [], "total_distance": 0.0,
+                      "status": "empty"}

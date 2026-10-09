@@ -26,3 +26,12 @@
 - T11 补充回归测试与接口契约自检脚本（`tests/test_improvements.py`、`tests/api_contract_check.py`）
 - T12 新增 `start.sh` 一键启动脚本与 `docs/演示剧本.md`
 - T13 重建前端 `dist` 构建产物
+
+## [v1.3.1] - 2026-10-09
+- 接口复核：OpenAPI 共 19 个 REST 路径，原有演示接口、选题报告兼容接口和 `/ws/gps` 均已注册；`POST /api/simulation` 的 `force` 参数、双向 GPS WebSocket、`Store` 位置存储接口已完成对齐（`backend/api/routes.py`、`backend/main.py`、`backend/service.py`、`backend/store.py`、`backend/data/gps_simulator.py`）。
+- 演示稳定性修复：`GET /api/dispatch/tasks` 无缓存时直接返回空任务，不再隐式触发 GA + OR-Tools 求解；新增回归测试。
+- 启动稳定性修复：`start.sh` 将 Uvicorn 绑定地址改为 `127.0.0.1`，适配本机演示环境并避免 `0.0.0.0` 绑定被系统拒绝。
+- 复现验证：后端依赖可由 `./start.sh` 自动创建，前端生产构建成功；29 项测试与接口契约自检通过，根路径和 `/api/health` 已完成启动冒烟检查。
+- 需求审计结论：聚类、改进遗传算法 CVRP、三策略 SimPy 仿真、清洗去重、地图回放、WebSocket、参数配置和演示脚本均已实现。现有代码保留项目既有的 `algorithms/`、`data/`、`components/` 分层，与最初 Prompt 中的扁平文件树和 `heatmap.js` 命名不同，但不影响现有运行链路。
+- 遗留问题：底图当前使用四角标定范围 `34.140–34.146, 108.838–108.845`，与 Prompt 中给出的坐标范围不同；更换坐标前必须同步重新标定 `campus_map.jpg`，否则热力点和路线会错位。
+- 构建提示：前端生产包约 1.29 MB，Vite 给出超过 500 kB 的体积提示；当前不影响本地演示，代码拆包留待后续。

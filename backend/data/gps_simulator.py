@@ -12,6 +12,8 @@ import math
 import os
 import random
 import sys
+import time
+import asyncio
 from datetime import datetime, timedelta
 
 import numpy as np
@@ -188,8 +190,54 @@ class GpsSimulator:
                     events.append({**b.to_dict(sim_time.isoformat()), "event": "idle"})
         return events
 
+    def generate_stream(self, start_time: datetime | None = None,
+                        step_seconds: float = 60.0,
+                        max_steps: int | None = None,
+                        realtime: bool = False):
+        """持续生成原始 GPS 事件，供 WebSocket 或独立脚本消费。
+
+        每个 ``yield`` 是一个包含 ``bike_id/lat/lng/status/ts/event`` 的字典。
+        ``max_steps`` 便于测试和演示；留空时持续运行。设置 ``realtime`` 后，
+        每一步按墙钟等待 ``step_seconds``，默认关闭以便仿真快速推进。
+        """
+        if step_seconds <= 0:
+            raise ValueError("step_seconds 必须大于 0")
+        sim_time = start_time or datetime.now().replace(microsecond=0)
+        step = 0
+        while max_steps is None or step < max_steps:
+            for event in self.step(sim_time, dt_s=step_seconds):
+                event = dict(event)
+                # Prompt/报告使用 timestamp 命名；保留现有 ts 字段以兼容清洗器。
+                event.setdefault("timestamp", event.get("ts"))
+                yield event
+            step += 1
+            sim_time += timedelta(seconds=step_seconds)
+            if realtime:
+                time.sleep(step_seconds)
+
+
+async def push_stream(uri: str = "ws://localhost:8000/ws/gps",
+                      total_bikes: int = 300,
+                      step_seconds: float = 10.0) -> None:
+    """把模拟 GPS 流推送到后端 WebSocket，供独立数据源进程使用。"""
+    import json
+    import websockets
+
+    simulator = GpsSimulator(total_bikes=total_bikes)
+    async with websockets.connect(uri) as websocket:
+        for event in simulator.generate_stream(step_seconds=step_seconds,
+                                                realtime=True):
+            await websocket.send(json.dumps(event, ensure_ascii=False))
+            await asyncio.sleep(0)
+
 
 if __name__ == "__main__":
+    # ``python data/gps_simulator.py`` 运行本地自测；加 --push 时作为独立
+    # WebSocket 数据源连接已启动的 FastAPI 服务。
+    if "--push" in sys.argv:
+        asyncio.run(push_stream())
+        raise SystemExit(0)
+
     # 简单自测：运行 1 分钟数据流
     sim = GpsSimulator(total_bikes=20)
     t0 = datetime(2026, 9, 21, 7, 30, 0)

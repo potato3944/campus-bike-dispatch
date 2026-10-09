@@ -29,6 +29,7 @@
 ├── backend/                     # 后端（FastAPI）
 │   ├── main.py                  # 应用入口 + WebSocket
 │   ├── config.py                # 全局可配置参数（可经 POST /api/config 运行时覆盖）
+│   ├── store.py                 # 轻量位置存储抽象（内存实现，可替换 Redis）
 │   ├── geo.py                   # 像素<->经纬度映射、距离计算
 │   ├── service.py               # 运行时状态管理（模拟线程/缓存/参数配置）
 │   ├── data/
@@ -67,7 +68,7 @@
 cd backend
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt   # fastapi/uvicorn/numpy/simpy/scikit-learn/ortools/pytest
-.venv/bin/python -m uvicorn main:app --host 0.0.0.0 --port 8000
+.venv/bin/python -m uvicorn main:app --host 127.0.0.1 --port 8000
 ```
 
 ### 2. 前端（开发模式，端口以 vite.config.js 为准，默认 5174）
@@ -79,6 +80,9 @@ npm run dev
 ```
 
 浏览器访问 [http://localhost:5174](http://localhost:5174)。
+
+开发模式下后端已允许 `localhost:5173/5174` 与对应 `127.0.0.1` 来源；生产托管模式
+由 FastAPI 同源提供页面，不需要额外配置跨域。
 
 ### 3. 生产模式（后端托管前端构建产物）
 
@@ -104,6 +108,10 @@ cd frontend && npm run build
 | GET  | /api/scenario/{id} | 指定场景的演化帧序列（带缓存）  |
 | GET  | /api/evolution     | 早高峰聚集演化回放帧       |
 | WS   | /ws/gps            | 实时 GPS 数据流（附带最近聚类结果） |
+
+选题报告兼容接口：`GET /api/gps/latest`、`GET /api/cluster/result`、
+`GET /api/cluster/heatmap`、`GET /api/config/bounds`、`GET /api/dispatch/tasks`、
+`GET /api/sim/result`，以及 `POST /api/dispatch/generate`、`POST /api/sim/run`。
 
 ### 参数覆盖示例
 
@@ -202,7 +210,7 @@ MAP = {
 
 ## 性能与缓存
 
-* 仿真结果按参数缓存，重复调用直接命中（`POST /api/simulation` 传 `force: true` 可强制重算）
+* 仿真结果按参数缓存，重复调用直接命中（`POST /api/simulation` 传 `force: true` 可强制重算，参数会透传到服务层）
 * 预设场景演化帧按 `(scenario_id, total_bikes, num_frames)` 缓存，切换场景秒开
 * 调度求解只在锁外进行，求解期间 GPS 模拟线程与 WebSocket 推送不中断
 

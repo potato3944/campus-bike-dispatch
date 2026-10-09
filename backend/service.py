@@ -143,6 +143,25 @@ class BikeService:
         if should_scan:
             self.scan_clusters()
 
+    def ingest_point(self, point):
+        """接收外部 GPS 点并走同一套清洗、去重和缓存流程。
+
+        内置模拟线程和 ``/ws/gps`` 外部推送都调用这条路径，确保数据质量
+        规则一致；被拒绝的点不会覆盖上一条有效位置。
+        """
+        normalized = dict(point or {})
+        if normalized.get("ts") is None and normalized.get("timestamp") is not None:
+            normalized["ts"] = normalized["timestamp"]
+        with self._lock:
+            cleaned = self.cleaner.clean(normalized)
+            if cleaned is None:
+                self.rejected_points += 1
+                return None
+            self.all_bikes[cleaned["bike_id"]] = cleaned
+            self.recent_points = list(self.all_bikes.values())
+            self.bike_points = list(self.all_bikes.values())
+            return dict(cleaned)
+
     def _due_for_scan(self):
         """判断是否到达聚类扫描周期（调用方需持有锁）。"""
         interval_s = max(1, int(self.config["cluster"]["scan_interval_s"]))

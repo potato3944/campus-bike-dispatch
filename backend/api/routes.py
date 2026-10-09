@@ -142,10 +142,99 @@ def simulation(req: Optional[SimRequest] = None):
     """运行 SimPy 离散事件仿真对比实验（可覆盖仿真参数）"""
     payload = _model_dump(req)
     strategy = payload.pop("strategy", None)
+    force = bool(payload.pop("force", False))
     try:
-        return service.run_simulation(strategy=strategy, overrides=payload)
+        return service.run_simulation(strategy=strategy, overrides=payload,
+                                      force=force)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
+
+
+# ---------------------------------------------------------------------------
+# Prompt 兼容别名
+# 选题报告早期接口命名与当前演示版接口略有差异。保留当前接口的完整响应，
+# 同时提供这些轻量别名，便于按报告中的 curl 示例或外部脚本接入。
+# ---------------------------------------------------------------------------
+@router.get("/gps/latest")
+def get_latest_gps():
+    """返回最新车辆位置列表（报告接口别名）。"""
+    return service.snapshot()["bike_points"]
+
+
+@router.get("/cluster/result")
+def get_cluster_result_compat():
+    """返回最近一次聚类结果（报告接口别名）。"""
+    return service.last_cluster or service.scan_clusters()
+
+
+@router.get("/cluster/heatmap")
+def get_cluster_heatmap_compat():
+    """只返回热力图点位，便于 Leaflet/heatmap.js 直接消费。"""
+    result = service.last_cluster or service.scan_clusters()
+    return result.get("heat", [])
+
+
+@router.get("/config/bounds")
+def get_config_bounds_compat():
+    """返回底图范围、边界和热点（报告接口别名）。"""
+    cfg = service.config
+    m = cfg["map"]
+    tl, tr = m["top_left"], m["top_right"]
+    bl, br = m["bottom_left"], m["bottom_right"]
+    return {
+        "CAMPUS_IMAGE_BOUNDS": {
+            "south_west": [bl["lat"], bl["lng"]],
+            "north_east": [tr["lat"], tr["lng"]],
+        },
+        "CAMPUS_BOUNDS": {
+            "south": min(bl["lat"], br["lat"]),
+            "north": max(tl["lat"], tr["lat"]),
+            "west": min(tl["lng"], bl["lng"]),
+            "east": max(tr["lng"], br["lng"]),
+        },
+        # 当前底图是四角标定图，四边形边界比伪造六边形更准确。
+        "CAMPUS_BOUNDARY": [
+            [tl["lat"], tl["lng"]], [tr["lat"], tr["lng"]],
+            [br["lat"], br["lng"]], [bl["lat"], bl["lng"]],
+        ],
+        "HOTSPOTS": service.hotspots,
+    }
+
+
+@router.post("/dispatch/generate")
+def generate_dispatch_compat(req: Optional[DispatchRequest] = None):
+    """生成调度任务（报告接口别名）。"""
+    return dispatch(req)
+
+
+@router.get("/dispatch/tasks")
+def get_dispatch_tasks_compat():
+    """返回当前调度计划中的任务列表。"""
+    # 查询接口不应因为没有缓存而隐式触发 GA + OR-Tools 求解；
+    # 调度仍由 POST /api/dispatch 或 /api/dispatch/generate 显式触发。
+    result = service.last_dispatch
+    if result is None:
+        return {"tasks": [], "route": [], "total_distance": 0.0,
+                "status": "empty"}
+    return {"tasks": result.get("tasks", []),
+            "route": result.get("route", []),
+            "total_distance": result.get("total_distance", 0.0),
+            "status": result.get("status", "empty")}
+
+
+@router.post("/sim/run")
+def run_sim_compat(req: Optional[SimRequest] = None):
+    """启动仿真（报告接口别名）。"""
+    return simulation(req)
+
+
+@router.get("/sim/result")
+def get_sim_result_compat():
+    """获取最近一次仿真结果，不会因查询而意外启动长时间计算。"""
+    return service.last_simulation or {
+        "results": [], "cached": False,
+        "message": "尚未运行仿真，请先 POST /api/sim/run",
+    }
 
 
 @router.get("/scenarios")
